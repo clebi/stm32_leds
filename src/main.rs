@@ -32,13 +32,13 @@ app! {
     device: f3::stm32f30x,
 
     resources: {
-        static ON: bool = false;
+        static LED_INDEX: usize = 0;
     },
 
     tasks: {
         SYS_TICK: {
             path: toggle,
-            resources: [ON],
+            resources: [LED_INDEX],
         },
     },
 }
@@ -47,7 +47,7 @@ fn init(p: init::Peripherals, _r: init::Resources) {
     led::init(p.GPIOE, p.RCC);
 
     p.SYST.set_clock_source(SystClkSource::Core);
-    p.SYST.set_reload(8_000_000);
+    p.SYST.set_reload(8_000_000 / 4);
     p.SYST.enable_interrupt();
     p.SYST.enable_counter();
 }
@@ -61,11 +61,10 @@ fn idle() -> ! {
 }
 
 fn toggle(_t: &mut Threshold, r: SYS_TICK::Resources) {
-    **r.ON = !**r.ON;
-
-    if **r.ON {
-        LEDS[0].on()
-    } else {
-        LEDS[0].off();
+    LEDS[**r.LED_INDEX].off();
+    **r.LED_INDEX += 1;
+    if **r.LED_INDEX >= LEDS.len() {
+        **r.LED_INDEX = 0;
     }
+    LEDS[**r.LED_INDEX].on();
 }
