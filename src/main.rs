@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![deny(unsafe_code)]
 #![feature(proc_macro)]
 #![no_std]
 
@@ -40,10 +39,20 @@ app! {
             path: toggle,
             resources: [LED_INDEX],
         },
+        EXTI0: {
+            path: button,
+            resources: [EXTI, LED_INDEX],
+        },
     },
 }
 
 fn init(p: init::Peripherals, _r: init::Resources) {
+    // configure interrupt for user button
+    unsafe { p.SYSCFG.exticr1.modify(|_, w| w.exti0().bits(0)); }
+    p.RCC.ahbenr.modify(|_, w| w.iopaen().enabled());
+    p.EXTI.imr1.modify(|_, w| w.mr0().set_bit());
+    p.EXTI.rtsr1.modify(|_, w| w.tr0().set_bit());
+
     led::init(p.GPIOE, p.RCC);
 
     p.SYST.set_clock_source(SystClkSource::Core);
@@ -60,11 +69,18 @@ fn idle() -> ! {
     }
 }
 
+/// Enable LED sequentially
 fn toggle(_t: &mut Threshold, r: SYS_TICK::Resources) {
     LEDS[**r.LED_INDEX].off();
-    **r.LED_INDEX += 1;
-    if **r.LED_INDEX >= LEDS.len() {
-        **r.LED_INDEX = 0;
-    }
+    **r.LED_INDEX = (**r.LED_INDEX + 1) % LEDS.len();
     LEDS[**r.LED_INDEX].on();
+}
+
+/// Button interrupt
+///
+/// Reset the LED sequence
+fn button(_t: &mut Threshold, r: EXTI0::Resources) {
+    (*r.EXTI).pr1.modify(|_, w| w.pr0().set_bit());
+    LEDS[**r.LED_INDEX].off();
+    **r.LED_INDEX = 0;
 }
