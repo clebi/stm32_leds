@@ -22,7 +22,7 @@ extern crate cortex_m_semihosting as semihosting;
 
 use core::fmt::Write;
 
-use rtfm::{app, Threshold};
+use rtfm::{app, Threshold, Resource};
 use semihosting::hio;
 use cortex_m::peripheral::SystClkSource;
 use f3::led::{self, LEDS};
@@ -37,10 +37,12 @@ app! {
     tasks: {
         SYS_TICK: {
             path: toggle,
+            priority: 1,
             resources: [LED_INDEX],
         },
         EXTI0: {
             path: button,
+            priority: 2,
             resources: [EXTI, LED_INDEX],
         },
     },
@@ -70,17 +72,24 @@ fn idle() -> ! {
 }
 
 /// Enable LED sequentially
-fn toggle(_t: &mut Threshold, r: SYS_TICK::Resources) {
-    LEDS[**r.LED_INDEX].off();
-    **r.LED_INDEX = (**r.LED_INDEX + 1) % LEDS.len();
-    LEDS[**r.LED_INDEX].on();
+fn toggle(t: &mut Threshold, SYS_TICK::Resources {mut LED_INDEX}: SYS_TICK::Resources) {
+    LED_INDEX.claim_mut(t, |led_index, _t| {
+        LEDS[**led_index].off();
+        **led_index = (**led_index + 1) % LEDS.len();
+        LEDS[**led_index].on();
+    });
 }
 
 /// Button interrupt
 ///
 /// Reset the LED sequence
-fn button(_t: &mut Threshold, r: EXTI0::Resources) {
-    (*r.EXTI).pr1.modify(|_, w| w.pr0().set_bit());
-    LEDS[**r.LED_INDEX].off();
-    **r.LED_INDEX = 0;
+fn button(t: &mut Threshold, EXTI0::Resources{EXTI, LED_INDEX}: EXTI0::Resources) {
+    rtfm::atomic(t, |t| {
+        let exti_reg = EXTI.borrow(t);
+        let led_index = LED_INDEX.borrow_mut(t);
+
+        exti_reg.pr1.modify(|_, w| w.pr0().set_bit());
+        LEDS[**led_index].off();
+        **led_index = 0;
+    });
 }
